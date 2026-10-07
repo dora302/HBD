@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>두더지 게임</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sky: #a8dcff;
+    --sky-deep: #7cc4f2;
+    --grass: #6cc24a;
+    --grass-dark: #4e9a33;
+    --dirt: #8a5532;
+    --pit: #3a2014;
+    --ink: #2d1b4e;
+    --pink: #ff5c8a;
+    --flame: #ffb703;
+    --paper: #fffdf7;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: 'Jua', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    color: var(--ink);
+    background: linear-gradient(var(--sky) 0%, var(--sky-deep) 100%) fixed;
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px));
+    user-select: none; -webkit-user-select: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1 { font-size: clamp(26px, 6vw, 40px); margin: 4px 0 10px; font-weight: 400; letter-spacing: .02em; }
+
+  .status { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; font-size: 18px; }
+  .hearts span { font-size: 22px; color: var(--pink); transition: color .2s, transform .2s; display: inline-block; }
+  .hearts span.lost { color: rgba(45, 27, 78, .25); transform: scale(.8); }
+
+  /* ---------- 두더지 판 ---------- */
+  .board {
+    width: min(94vw, 480px);
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 2%;
+    padding: 4%;
+    background: radial-gradient(circle at 30% 20%, #82d35f, var(--grass) 60%, var(--grass-dark));
+    border: 3px solid var(--ink);
+    border-radius: 28px;
+    box-shadow: 0 6px 0 var(--ink);
+    cursor: none;
+  }
+  .hole { position: relative; aspect-ratio: 1 / 1.05; }
+  .pit {
+    position: absolute; left: 8%; right: 8%; bottom: 8%; height: 30%;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at 50% 35%, #1e0f08, var(--pit) 70%);
+  }
+  .clip { position: absolute; left: 14%; right: 14%; top: 0; bottom: 23%; overflow: hidden; }
+  .lip {
+    position: absolute; left: 6%; right: 6%; bottom: 6%; height: 17%;
+    background: var(--dirt);
+    border-radius: 0 0 50% 50% / 0 0 100% 100%;
+    border: 3px solid var(--ink); border-top: none;
+  }
+  .mole {
+    position: absolute; left: 0; bottom: 0; width: 100%; height: 100%;
+    transform: translateY(105%);
+    transition: transform .16s ease-out;
+  }
+  .mole.up { transform: translateY(6%); }
+  .mole svg { width: 100%; height: 100%; display: block; transform-origin: 50% 100%; transition: transform .1s; }
+  .mole .x-eyes { display: none; }
+  .mole.bonked .x-eyes { display: inline; }
+  .mole.bonked .o-eyes { display: none; }
+  .mole.bonked svg { transform: scaleY(.86) scaleX(1.06); }
+
+  .hammer {
+    position: fixed; left: 0; top: 0; width: 70px; height: 70px;
+    pointer-events: none; z-index: 8;
+    transform-origin: 35px 68px;      /* 손잡이 끝을 축으로 회전 */
+    transform: rotate(20deg);         /* 평소: 뒤로 들어 올린 자세 */
+    transition: transform .12s ease-out;
+    display: none;
+  }
+  .hammer.show { display: block; }
+  .hammer.swing { transform: rotate(-50deg); transition-duration: .06s; } /* 내리친 자세 */
+
+  .pop {
+    position: absolute; left: 50%; top: 4%;
+    font-size: clamp(18px, 5vw, 26px); color: #fff;
+    -webkit-text-stroke: 1.5px var(--ink); paint-order: stroke fill;
+    pointer-events: none; white-space: nowrap;
+    animation: rise .8s ease-out forwards;
+  }
+  @keyframes rise {
+    from { transform: translate(-50%, 0) scale(.7); opacity: 1; }
+    to   { transform: translate(-50%, -60px) scale(1.15); opacity: 0; }
+  }
+
+  /* ---------- 문구 / 팝업 ---------- */
+  .flash {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    pointer-events: none; z-index: 5; text-align: center; white-space: pre-line;
+    font-size: clamp(52px, 15vw, 120px); line-height: 1.1;
+    color: var(--pink); -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill;
+    opacity: 0;
+  }
+  .flash.small { font-size: clamp(34px, 9vw, 70px); }
+  .flash.show { animation: shout 2s ease-out forwards; }
+  @keyframes shout {
+    0%   { opacity: 0; transform: scale(1.6); }
+    10%  { opacity: 1; transform: scale(1); }
+    16%  { transform: translateX(-10px); }
+    22%  { transform: translateX(10px); }
+    28%  { transform: translateX(0); }
+    85%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  .overlay {
+    position: fixed; inset: 0; z-index: 10;
+    background: rgba(45, 27, 78, .55);
+    display: flex; padding: 20px;
+    overflow-y: auto;
+  }
+  .overlay > * { margin: auto; }  /* 화면이 작으면 잘리지 않고 스크롤 */
+  .overlay.hidden { display: none; }
+  .card {
+    background: var(--paper); border: 3px solid var(--ink); border-radius: 24px;
+    box-shadow: 0 7px 0 var(--ink);
+    padding: 26px 24px 22px; width: min(90vw, 380px); text-align: center;
+  }
+  .card h2 { font-weight: 400; font-size: 30px; margin: 0 0 10px; }
+  .card p { font-size: 17px; line-height: 1.55; margin: 0 0 18px; color: #4b3d66; }
+  .btn {
+    font-family: inherit; font-size: 22px; color: #fff;
+    background: var(--pink); border: 3px solid var(--ink); border-radius: 16px;
+    padding: 12px 30px; box-shadow: 0 5px 0 var(--ink); cursor: pointer;
+    transition: transform .06s, box-shadow .06s;
+  }
+  .btn:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+  .btn:focus-visible { outline: 3px solid var(--flame); outline-offset: 3px; }
+  .btn.ghost { background: #fff; color: var(--ink); font-size: 17px; padding: 8px 18px; margin-top: 12px; }
+
+  /* ---------- 두더지 악단 ---------- */
+  .win-wrap { display: flex; flex-direction: column; align-items: center; }
+  .band { --w: min(27vw, 108px); position: relative; z-index: 1; margin-bottom: -8px; }
+  .band-row { display: flex; justify-content: center; }
+  .band-row + .band-row { margin-top: calc(var(--w) * -0.42); }  /* 아랫줄이 윗줄 앞에 살짝 겹침 */
+  .musician { width: var(--w); height: calc(var(--w) * 7 / 6); }
+  .musician svg { width: 100%; height: 100%; display: block; }
+  /* 두 장면을 한 박자(0.42초)씩 번갈아 보여 줌 */
+  .musician .fa { animation: frameA .84s steps(1) infinite; }
+  .musician .fb { animation: frameB .84s steps(1) infinite; }
+  @keyframes frameA { 0% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes frameB { 0% { opacity: 0; } 50% { opacity: 1; } }
+
+  .confetti { position: fixed; top: -14px; width: 9px; height: 15px; z-index: 20; pointer-events: none; animation: fall linear forwards; }
+  @keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .flash.show { animation: fade 2s forwards; }
+    @keyframes fade { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
+    .musician .fa { animation: none; }
+    .musician .fb { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<h1>두더지 악단을 잡아라!</h1>
+
+<div class="status">
+  <span>남은 기회</span>
+  <span class="hearts" id="hearts"></span>
+</div>
+
+<div class="board" id="board"></div>
+<div class="hammer" id="hammer">
+  <svg viewBox="0 0 70 70" width="70" height="70" aria-hidden="true">
+    <rect x="31" y="28" width="8" height="40" rx="3" fill="#c58a52" stroke="#2d1b4e" stroke-width="2.5"/>
+    <rect x="12" y="10" width="46" height="22" rx="6" fill="#ff5c8a" stroke="#2d1b4e" stroke-width="2.5"/>
+  </svg>
+</div>
+<div class="flash" id="flash"></div>
+
+<!-- 시작 화면 -->
+<div class="overlay" id="startScreen">
+  <div class="card">
+    <h2>🎂 준비됐나요?</h2>
+    <p>두더지 악단을 잡아라!<br>
+       두더지는 후딱 나타났다가 후딱 사라집니다.<br>기회는 총 다섯번!!</p>
+    <button class="btn" id="startBtn">START</button>
+  </div>
+</div>
+
+<!-- 성공 화면 -->
+<div class="overlay hidden" id="winScreen">
+  <div class="win-wrap">
+    <div class="band" aria-hidden="true">
+      <div class="band-row" id="bandTop"></div>
+      <div class="band-row" id="bandBottom"></div>
+    </div>
+    <div class="card">
+      <h2>🎉 연주 성공! 🎉</h2>
+      <p>오늘은 우리 엄마 '김현정'님의 생일입니다!<br>두더지 악단과 함께 축하를 전합니다</p>
+      <button class="btn" id="againBtn">다시 하기</button><br>
+      <button class="btn ghost" id="replayBtn">완성곡 다시 듣기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 두더지 그림 (원본 SVG) -->
+<template id="moleTpl">
+  <svg viewBox="0 0 100 112" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+    <!-- 고깔모자 -->
+    <polygon points="50,4 37,32 63,32" fill="#ff5c8a" stroke="#2d1b4e" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M44,18 L56,18 M41,25 L59,25" stroke="#ffd166" stroke-width="3"/>
+    <circle cx="50" cy="5" r="4.5" fill="#ffd166" stroke="#2d1b4e" stroke-width="2"/>
+    <!-- 몸 -->
+    <path d="M17,112 L17,60 Q17,29 50,29 Q83,29 83,60 L83,112 Z" fill="#8b5a3c" stroke="#2d1b4e" stroke-width="3"/>
+    <!-- 얼굴 -->
+    <ellipse cx="50" cy="68" rx="23" ry="18" fill="#d9a77e"/>
+    <!-- 평소 눈 -->
+    <g class="o-eyes">
+      <circle cx="39" cy="52" r="4.5" fill="#2d1b4e"/><circle cx="40.5" cy="50.5" r="1.5" fill="#fff"/>
+      <circle cx="61" cy="52" r="4.5" fill="#2d1b4e"/><circle cx="62.5" cy="50.5" r="1.5" fill="#fff"/>
+    </g>
+    <!-- 맞았을 때 눈 -->
+    <g class="x-eyes" stroke="#2d1b4e" stroke-width="3" stroke-linecap="round">
+      <path d="M35,48 L43,56 M43,48 L35,56"/><path d="M57,48 L65,56 M65,48 L57,56"/>
+    </g>
+    <!-- 볼 -->
+    <circle cx="30" cy="66" r="4" fill="#ff8fab" opacity=".6"/>
+    <circle cx="70" cy="66" r="4" fill="#ff8fab" opacity=".6"/>
+    <!-- 코, 입, 이빨 -->
+    <ellipse cx="50" cy="63" rx="7.5" ry="5.5" fill="#ff6f91" stroke="#2d1b4e" stroke-width="2"/>
+    <path d="M44,73 Q50,78 56,73" fill="none" stroke="#2d1b4e" stroke-width="2.5" stroke-linecap="round"/>
+    <rect x="47" y="74" width="6" height="5" rx="1" fill="#fff" stroke="#2d1b4e" stroke-width="1.5"/>
+    <!-- 수염 -->
+    <path d="M30,62 L18,59 M30,67 L18,68 M70,62 L82,59 M70,67 L82,68" stroke="#2d1b4e" stroke-width="1.5" stroke-linecap="round"/>
+    <!-- 앞발 -->
+    <ellipse cx="31" cy="95" rx="9" ry="7" fill="#d9a77e" stroke="#2d1b4e" stroke-width="2.5"/>
+    <ellipse cx="69" cy="95" rx="9" ry="7" fill="#d9a77e" stroke="#2d1b4e" stroke-width="2.5"/>
+  </svg>
+</template>
+
+<script>
+// ===== 설정 =====
+const UP_TIME = 2000;     // 두더지가 올라와 있는 시간 (ms)
+const FOCUS_TIME = 2000;  // "집중!!" 표시 시간 (ms)
+const MAX_MISS = 5;       // 이만큼 놓치면 처음부터
+const NEXT_DELAY = [350, 700]; // 다음 두더지가 나오기까지 대기 (ms)
+
+// 생일 축하 노래 (C장조) [가사, 주파수]
+const NOTES = [
+  ['생',392.00],['일',392.00],['축',440.00],['하',392.00],['합니',523.25],['다',493.88],
+  ['생',392.00],['일',392.00],['축',440.00],['하',392.00],['합니',587.33],['다',523.25],
+  ['사',392.00],['랑',392.00],['하',783.99],['는',659.25],['엄',523.25],['마',493.88],['의',440.00],
+  ['생',698.46],['일',698.46],['축',659.25],['하',523.25],['합니',587.33],['다',523.25]
+];
+// 성공 후 완성곡 재생용 박자 (4분음표 = 1)
+const BEATS = [.75,.25,1,1,1,2, .75,.25,1,1,1,2, .75,.25,1,1,1,1,2, .75,.25,1,1,1,3];
+
+// ===== 화면 만들기 =====
+const board = document.getElementById('board');
+const heartsEl = document.getElementById('hearts');
+const flashEl = document.getElementById('flash');
+const moleTpl = document.getElementById('moleTpl');
+const holes = [], moles = [];
+
+for (let i = 0; i < 9; i++) {
+  const hole = document.createElement('div');
+  hole.className = 'hole';
+  hole.innerHTML = '<div class="pit"></div><div class="clip"><div class="mole"></div></div><div class="lip"></div>';
+  const mole = hole.querySelector('.mole');
+  mole.appendChild(moleTpl.content.cloneNode(true));
+  hole.addEventListener('pointerdown', e => { e.preventDefault(); whack(i); });
+  board.appendChild(hole);
+  holes.push(hole); moles.push(mole);
+}
+
+for (let i = 0; i < MAX_MISS; i++) {
+  const h = document.createElement('span'); h.textContent = '♥'; heartsEl.appendChild(h);
+}
+
+// ===== 두더지 악단 그림 =====
+const INK = '#2d1b4e';
+const paw = (cx, cy) => `<ellipse cx="${cx}" cy="${cy}" rx="8" ry="7" fill="#d9a77e" stroke="${INK}" stroke-width="2.5"/>`;
+
+// 악단 두더지 기본 몸 (eyes: open | happy, mouth: smile | big | O | none)
+function moleBody({ hat, eyes = 'open', mouth = 'smile', cheek = 4 }) {
+  const eyeSvg = eyes === 'open'
+    ? `<circle cx="49" cy="56" r="4.5" fill="${INK}"/><circle cx="50.5" cy="54.5" r="1.5" fill="#fff"/>
+       <circle cx="71" cy="56" r="4.5" fill="${INK}"/><circle cx="72.5" cy="54.5" r="1.5" fill="#fff"/>`
+    : `<path d="M44,58 Q49,51 54,58 M66,58 Q71,51 76,58" fill="none" stroke="${INK}" stroke-width="3" stroke-linecap="round"/>`;
+  const mouths = {
+    smile: `<path d="M54,77 Q60,82 66,77" fill="none" stroke="${INK}" stroke-width="2.5" stroke-linecap="round"/>
+            <rect x="57" y="78" width="6" height="5" rx="1" fill="#fff" stroke="${INK}" stroke-width="1.5"/>`,
+    big:   `<path d="M52,76 Q60,92 68,76 Z" fill="#6b1f3a" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>`,
+    O:     `<ellipse cx="60" cy="81" rx="4.5" ry="5.5" fill="#6b1f3a" stroke="${INK}" stroke-width="2"/>`,
+    none:  ''
+  };
+  return `
+    <polygon points="60,8 47,36 73,36" fill="${hat}" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M54,22 L66,22 M51,29 L69,29" stroke="#fff" stroke-width="3" opacity=".75"/>
+    <circle cx="60" cy="9" r="4.5" fill="#fff" stroke="${INK}" stroke-width="2"/>
+    <path d="M27,140 L27,64 Q27,33 60,33 Q93,33 93,64 L93,140 Z" fill="#8b5a3c" stroke="${INK}" stroke-width="3"/>
+    <ellipse cx="60" cy="72" rx="23" ry="18" fill="#d9a77e"/>
+    ${eyeSvg}
+    <circle cx="40" cy="70" r="${cheek}" fill="#ff8fab" opacity=".75"/>
+    <circle cx="80" cy="70" r="${cheek}" fill="#ff8fab" opacity=".75"/>
+    <ellipse cx="60" cy="67" rx="7.5" ry="5.5" fill="#ff6f91" stroke="${INK}" stroke-width="2"/>
+    ${mouths[mouth]}
+    <path d="M40,66 L28,63 M40,71 L28,72 M80,66 L92,63 M80,71 L92,72" stroke="${INK}" stroke-width="1.5" stroke-linecap="round"/>`;
+}
+
+// 아코디언: w가 넓으면 펼친 모습, 좁으면 접은 모습
+function accordion(w) {
+  const x0 = 60 - w / 2, x1 = 60 + w / 2, y = 92, h = 32;
+  const bx0 = x0 + 12, bx1 = x1 - 12;
+  let s = `<rect x="${bx0}" y="${y + 2}" width="${bx1 - bx0}" height="${h - 4}" fill="#ff5c8a" stroke="${INK}" stroke-width="2.5"/>`;
+  for (let i = 1; i < 6; i++) {
+    const x = bx0 + (bx1 - bx0) * i / 6;
+    s += `<line x1="${x}" y1="${y + 3}" x2="${x}" y2="${y + h - 3}" stroke="${INK}" stroke-width="1.5"/>`;
+  }
+  s += `<rect x="${x0}" y="${y}" width="12" height="${h}" rx="3" fill="#ffd166" stroke="${INK}" stroke-width="2.5"/>`;
+  s += `<rect x="${x1 - 12}" y="${y}" width="12" height="${h}" rx="3" fill="#ffd166" stroke="${INK}" stroke-width="2.5"/>`;
+  for (let k = 0; k < 4; k++) {
+    s += `<rect x="${x0 + 3}" y="${y + 4 + k * 7}" width="6" height="4" fill="#fff" stroke="${INK}" stroke-width="1"/>`;
+  }
+  return s + paw(x0 - 2, y + h / 2) + paw(x1 + 2, y + h / 2);
+}
+
+// 나팔: angle만큼 입을 중심으로 기울임
+function trumpet(angle) {
+  return `<g transform="rotate(${angle} 60 79)">
+    <rect x="70" y="68" width="4" height="9" fill="#ffd166" stroke="${INK}" stroke-width="1.5"/>
+    <rect x="77" y="68" width="4" height="9" fill="#ffd166" stroke="${INK}" stroke-width="1.5"/>
+    <rect x="84" y="68" width="4" height="9" fill="#ffd166" stroke="${INK}" stroke-width="1.5"/>
+    <rect x="63" y="76" width="35" height="6" rx="2" fill="#ffd166" stroke="${INK}" stroke-width="2"/>
+    <rect x="56" y="77" width="8" height="4" rx="1" fill="#e0a800" stroke="${INK}" stroke-width="1.5"/>
+    <path d="M96,74 L113,63 L113,95 L96,84 Z" fill="#ffd166" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>
+    <ellipse cx="113" cy="79" rx="3" ry="16" fill="#ffe8a3" stroke="${INK}" stroke-width="2"/>
+    ${paw(82, 87)}
+  </g>`;
+}
+
+// 마이크 (오른쪽 앞발로 쥠)
+function mic() {
+  return `<rect x="76" y="88" width="6" height="20" rx="2" fill="${INK}"/>
+    <circle cx="79" cy="82" r="7" fill="#c9c9d6" stroke="${INK}" stroke-width="2.5"/>
+    <path d="M74,80 L84,80 M74,85 L84,85 M79,76 L79,88" stroke="${INK}" stroke-width="1" opacity=".5"/>
+    ${paw(79, 104)}`;
+}
+const armUp = `<path d="M33,94 L22,60" stroke="${INK}" stroke-width="13" stroke-linecap="round"/>
+  <path d="M33,94 L22,60" stroke="#8b5a3c" stroke-width="8" stroke-linecap="round"/>${paw(22, 58)}`;
+
+// 각 악기별 [장면A, 장면B, 음표위치A, 음표위치B]
+const FRAMES = {
+  accordion: hat => [
+    moleBody({ hat }) + accordion(70),
+    moleBody({ hat, eyes: 'happy', mouth: 'big' }) + accordion(46),
+    [100, 44], [104, 30]
+  ],
+  trumpet: hat => [
+    moleBody({ hat, mouth: 'none', cheek: 5 }) + trumpet(-18),
+    moleBody({ hat, eyes: 'happy', mouth: 'none', cheek: 7.5 }) + trumpet(-4),
+    [98, 40], [108, 58]
+  ],
+  mic: hat => [
+    moleBody({ hat, eyes: 'happy', mouth: 'big' }) + mic() + armUp,
+    moleBody({ hat, mouth: 'O' }) + mic() + paw(31, 104),
+    [104, 44], [100, 30]
+  ]
+};
+
+function musicianSVG(kind, hat, mirror) {
+  const [a, b, na, nb] = FRAMES[kind](hat);
+  const flip = mirror ? ' transform="translate(120,0) scale(-1,1)"' : '';
+  const note = ([x, y]) =>
+    `<text x="${mirror ? 120 - x : x}" y="${y}" font-size="18" text-anchor="middle" fill="${INK}">♪</text>`;
+  return `<svg viewBox="0 0 120 140">
+    <g class="fa"><g${flip}>${a}</g>${note(na)}</g>
+    <g class="fb"><g transform="translate(0,3)"><g${flip}>${b}</g></g>${note(nb)}</g>
+    <ellipse cx="60" cy="136" rx="50" ry="10" fill="#8a5532" stroke="${INK}" stroke-width="3"/>
+  </svg>`;
+}
+
+// [악기, 모자 색, 좌우 반전]
+const BAND_TOP = [['accordion', '#ffd166', false], ['accordion', '#7cc4f2', true]];
+const BAND_BOTTOM = [['trumpet', '#b392f0', true], ['mic', '#ff5c8a', false], ['trumpet', '#6cc24a', false]];
+function fillRow(id, list) {
+  document.getElementById(id).innerHTML =
+    list.map(([k, h, m]) => `<div class="musician">${musicianSVG(k, h, m)}</div>`).join('');
+}
+fillRow('bandTop', BAND_TOP);
+fillRow('bandBottom', BAND_BOTTOM);
+
+// ===== 소리 =====
+let actx = null, master = null;
+function initAudio() {
+  if (!actx) {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    master = actx.createGain(); master.gain.value = 0.6; master.connect(actx.destination);
+  }
+  if (actx.state === 'suspended') actx.resume();
+}
+function playNote(freq, t = actx.currentTime, dur = 0.9) {
+  const g = actx.createGain(); g.connect(master);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.5, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  const o1 = actx.createOscillator(); o1.type = 'triangle'; o1.frequency.value = freq; o1.connect(g);
+  const g2 = actx.createGain(); g2.gain.value = 0.25; g2.connect(g);
+  const o2 = actx.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 2; o2.connect(g2);
+  [o1, o2].forEach(o => { o.start(t); o.stop(t + dur + 0.05); });
+}
+function playMelody() {
+  initAudio();
+  const beat = 0.42;
+  let t = actx.currentTime + 0.15;
+  NOTES.forEach(([, f], i) => {
+    const d = BEATS[i] * beat;
+    playNote(f, t, Math.max(d * 1.4, 0.35));
+    t += d;
+  });
+}
+
+// ===== 게임 상태 =====
+let idx = 0, misses = 0, active = -1, last = -1, playing = false, upTimer = null, timers = [];
+const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
+const clearAll = () => { timers.forEach(clearTimeout); timers = []; };
+const rand = (a, b) => a + Math.random() * (b - a);
+
+function render() {
+  [...heartsEl.children].forEach((h, i) => h.classList.toggle('lost', i >= MAX_MISS - misses));
+}
+
+function hideAllMoles() { moles.forEach(m => m.classList.remove('up', 'bonked')); active = -1; }
+
+function spawn() {
+  if (!playing) return;
+  let i;
+  do { i = Math.floor(Math.random() * 9); } while (i === last);
+  last = i; active = i;
+  moles[i].classList.remove('bonked');
+  moles[i].classList.add('up');
+  upTimer = later(missed, UP_TIME);
+}
+
+function whack(i) {
+  if (!playing || i !== active) return;
+  clearTimeout(upTimer);
+  active = -1;
+  const [name, freq] = NOTES[idx];
+  playNote(freq);
+  popText(holes[i], '♪ ' + name);
+  idx++;
+  render();
+  const m = moles[i];
+  m.classList.add('bonked');
+  later(() => m.classList.remove('up'), 220);
+  if (idx >= NOTES.length) {
+    playing = false;
+    later(win, 900);
+  } else {
+    later(spawn, rand(...NEXT_DELAY));
+  }
+}
+
+function missed() {
+  if (!playing || active < 0) return;
+  moles[active].classList.remove('up');
+  active = -1;
+  misses++;
+  render();
+  if (misses >= MAX_MISS) {
+    flash('5번 놓쳤어요\n처음부터 다시!', true);
+    later(() => { idx = 0; misses = 0; render(); spawn(); }, FOCUS_TIME + 400);
+  } else {
+    flash('집중!!');
+    later(spawn, FOCUS_TIME); // 끊어진 음부터 그대로 이어감
+  }
+}
+
+function flash(text, small = false) {
+  flashEl.textContent = text;
+  flashEl.classList.toggle('small', small);
+  flashEl.classList.remove('show');
+  void flashEl.offsetWidth; // 애니메이션 다시 시작
+  flashEl.classList.add('show');
+}
+
+function popText(hole, text) {
+  const p = document.createElement('span');
+  p.className = 'pop'; p.textContent = text;
+  hole.appendChild(p);
+  setTimeout(() => p.remove(), 800);
+}
+
+function start() {
+  initAudio();
+  clearAll(); hideAllMoles();
+  idx = 0; misses = 0; last = -1;
+  render();
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('winScreen').classList.add('hidden');
+  playing = true;
+  later(spawn, 600);
+}
+
+function win() {
+  hideAllMoles();
+  document.getElementById('winScreen').classList.remove('hidden');
+  confetti();
+  playMelody();
+}
+
+function confetti() {
+  const colors = ['#ff5c8a', '#ffb703', '#6cc24a', '#7cc4f2', '#b392f0'];
+  for (let k = 0; k < 70; k++) {
+    const c = document.createElement('i');
+    c.className = 'confetti';
+    c.style.left = Math.random() * 100 + 'vw';
+    c.style.background = colors[k % colors.length];
+    c.style.animationDelay = Math.random() * 1.2 + 's';
+    c.style.animationDuration = 2.5 + Math.random() * 2 + 's';
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), 5500);
+  }
+}
+
+document.getElementById('startBtn').addEventListener('click', start);
+document.getElementById('againBtn').addEventListener('click', start);
+document.getElementById('replayBtn').addEventListener('click', playMelody);
+
+// ===== 망치 =====
+const hammer = document.getElementById('hammer');
+function moveHammer(e) {
+  hammer.style.left = (e.clientX - 5) + 'px';
+  hammer.style.top  = (e.clientY - 40) + 'px';
+}
+board.addEventListener('pointermove', e => {
+  moveHammer(e);
+  hammer.classList.add('show');
+});
+board.addEventListener('pointerleave', e => {
+  if (e.pointerType === 'mouse') hammer.classList.remove('show');
+});
+board.addEventListener('pointerdown', e => {
+  moveHammer(e);
+  hammer.classList.add('show', 'swing');
+  setTimeout(() => {
+    hammer.classList.remove('swing');
+    // 터치일 땐 내리친 뒤 망치를 숨김
+    if (e.pointerType !== 'mouse') setTimeout(() => hammer.classList.remove('show'), 150);
+  }, 90);
+});
+
+render();
+</script>
+</body>
+</html>
